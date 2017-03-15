@@ -1,0 +1,3 @@
+#! /bin/bash
+
+echo -n -e $1 | nc -u localhost 8080
