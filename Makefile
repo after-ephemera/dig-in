@@ -8,7 +8,7 @@ CFLAGS = -g
 all: server
 
 server: dns.c server.c
-	$(CC) $(CFLAGS) -o server dns.c server.c -lm 
+	$(CC) $(CFLAGS) -o bin/server dns.c server.c -lm 
 
 clean:
 	rm -f server
