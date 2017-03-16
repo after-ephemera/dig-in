@@ -49,11 +49,11 @@ void init_db() {
 	 fp = fopen(cachedb_file, "r");
 	 while(fscanf(fp, "%s %d %s %s %s", ownerName, &ttl, class, type, rData) != EOF){
 
-		printf("ownerName %s\n", ownerName);
+		printf("\nownerName %s\n", ownerName);
 		printf("ttl %d\n", ttl);
 		printf("class %s\n", class);
 		printf("type %s\n", type);
-		printf("rData %s\n", rData);
+		printf("rData %s\n\n", rData);
 	 }
 	 printf("Finished reading DB.\n");
 }
@@ -70,6 +70,15 @@ int is_valid_request(unsigned char *request) {
 	 *                  query), or if there are no questions in the query
 	 *                  (question count != 1).
 	 */
+	 int flags = ((request[2] << 8) | request[3]);
+	 int qr = (flags >> 15) & 0x01;
+	 int opcode = (flags >> 11) & 0x0f;
+	 int questionCount = (request[4] << 8) | request[5];
+	//  printf("Flags: %#06x\n", flags);
+	//  printf("qr: %d\n", qr);
+	//  printf("opcode: %#04x\n", opcode);
+	 printf("question count: %d\n", questionCount);
+	 return (!qr && !opcode && (questionCount == 1));
 }
 
 dns_rr get_question(unsigned char *request) {
@@ -241,8 +250,10 @@ void serve_udp(unsigned short port) {
 		printf("Got a message from %s:%s\n", client_hostname, client_port);
 
 		// Print the dns request bytes.
-		printf("Message: ");
+		printf("\nMessage: ");
 		print_bytes(&(message[0]), msg_length);
+		printf("Something\n");
+		printf("Valid: %s\n", is_valid_request(&(message[0]))?" True":" False");
 		// message[msg_length-2] = '!';
 		// Just echo the message back to the client
 		sendto(sock, message, msg_length, 0, (struct sockaddr*)&client_addr, client_addr_len);

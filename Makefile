@@ -11,4 +11,4 @@ server: dns.c server.c
 	$(CC) $(CFLAGS) -o bin/server dns.c server.c -lm 
 
 clean:
-	rm -f server
+	rm -f bin/server
