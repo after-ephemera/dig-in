@@ -76,6 +76,7 @@ void init_db()
 		rr.rdata = rData;
 		rr.rdata_len = strlen(rData);
 
+		// Wire-encode the rdata 
 		char* d = malloc(4);
 		inet_pton(AF_INET, rData, d);
 		printf("New data: ");
@@ -239,7 +240,7 @@ int get_response(unsigned char *request, int len, unsigned char *response)
 	for(int i = 0; i < cachedb_len; i++){
 		dns_db_entry e = cachedb[i];
 		// printf("Entry: %s\n", e.rr.name);
-		if(strcmp(e.rr.name, rr.name) == 0){
+		if(strcmp(e.rr.name, rr.name) == 0 && e.rr.type == rr.type && time(NULL) < e.expires){
 			// We have a match!
 			printf("Found a match!\n");
 			matchIndex = i;
@@ -248,7 +249,7 @@ int get_response(unsigned char *request, int len, unsigned char *response)
 	}
 
 	if(matchIndex == -1){
-		printf("No cache record in the database. Exiting.\n");
+		printf("No matching cache record in the database.\n");
 		// Set the response code to 3 (NXDOMAIN)
 		response[3] = 0x03;
 		// Set the number of answer rr's to 0
@@ -263,7 +264,10 @@ int get_response(unsigned char *request, int len, unsigned char *response)
 	response[6] = 0x00;
 	response[7] = 0x01;
 
-	int answerRRLength = rr_to_wire((cachedb[matchIndex]).rr, &(response[responseLength]), 0);
+	// dns_rr newRR;
+	// memcpy(&newRR, &e.rr, sizeof(rr));
+	cachedb[matchIndex].rr.ttl = cachedb[matchIndex].expires - time(NULL);
+	int answerRRLength = rr_to_wire(cachedb[matchIndex].rr, &(response[responseLength]), 0);
 	responseLength += answerRRLength;
 
 	printf("Current response: ");
