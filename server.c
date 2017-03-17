@@ -182,12 +182,47 @@ int get_response(unsigned char *request, int len, unsigned char *response)
 	 * OUTPUT: the length of the response message.
 	 */
     int isValidRequest = is_valid_request(request);
-    printf("Valid: %s\n", isValidRequest ? "True" : "False");
+    printf("Valid request: %s\n", isValidRequest ? "True" : "False");
+
 
 	// Get the query name and type
 	int i = 12;
 	dns_rr rr = rr_from_wire(request, &i, 1);
-	printf("Name: %s\n", rr.name);
+	printf("Request name: %s\n", rr.name);
+
+	// Build the response based on the cache entry/lack thereof
+
+	// First, copy the ID into the response.
+	response[0] = request[0];
+	response[1] = request[1];
+
+	// Clear flags and codes except qr and rd to 0.
+	// Set qr to 1 and rd to the value of rd from the request.
+	response[2] = 0x80 | (request[2] & 0x01);
+	response[3] = 0x00;
+
+	if(!isValidRequest){
+		// Set the response code to 1 (FORMERR or “format error”)
+		response[3] = 0x01;
+		// Set the number of answer rr's to 0
+		response[6] = 0x00;
+		response[7] = 0x00;
+		return 12;
+	}
+
+	// Set question count to 1.
+	response[4] = 0x00;
+	response[5] = 0x01;
+
+	// Set authority and additional counts to 0.
+	response[8] = 0x00;
+	response[9] = 0x00;
+	response[10] = 0x00;
+	response[11] = 0x00;
+
+	// Copy question section from request.
+	int queryLength = rr_to_wire(rr, &(response[12]), 1); 
+	// printf("Query Length: %d\n", queryLength);
 
 	int matchIndex = -1;
 	// Look up the query in the cache
@@ -204,17 +239,16 @@ int get_response(unsigned char *request, int len, unsigned char *response)
 
 	if(matchIndex == -1){
 		printf("No cache record in the database. Exiting.\n");
-		exit(1);
-		// return matchIndex;
+		// Set the response code to 3 (NXDOMAIN)
+		response[3] = 0x03;
+		// Set the number of answer rr's to 
+		response[6] = 0x00;
+		response[7] = 0x00;
+		return 12;
 	}
 
-	// Build the response based on the cache entry/lack thereof
-
-	if(isValidRequest){
-
-	}else{
-		//set the response code to 1 (FORMERR or “format error”)
-	}
+	printf("Current response: ");
+	print_bytes(response, 40);
 }
 
 int create_udp_server_socket(char *port, int protocol)
@@ -341,7 +375,7 @@ void serve_udp(unsigned short port)
 	int responseLength = get_response(message, msg_length, &(response[0]));
 
 	// Just echo the message back to the client TODO: change this
-	sendto(sock, message, msg_length, 0, (struct sockaddr *)&client_addr, client_addr_len);
+	sendto(sock, response, responseLength, 0, (struct sockaddr *)&client_addr, client_addr_len);
     }
     // return 0;
 }
