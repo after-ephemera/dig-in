@@ -7,6 +7,7 @@
 #include <time.h>
 #include <string.h>
 #include <netdb.h>
+#include <arpa/inet.h>
 
 #include "dns.h"
 
@@ -74,6 +75,13 @@ void init_db()
 		rr.type = type_d;
 		rr.rdata = rData;
 		rr.rdata_len = strlen(rData);
+
+		char* d = malloc(4);
+		inet_pton(AF_INET, rData, d);
+		printf("New data: ");
+		print_bytes(d, 4);
+		rr.rdata = d;
+		rr.rdata_len = 4;
 
 		printf("\nownerName %s\n", rr.name);
 		printf("ttl %d\n", rr.ttl);
@@ -201,13 +209,14 @@ int get_response(unsigned char *request, int len, unsigned char *response)
 	response[2] = 0x80 | (request[2] & 0x01);
 	response[3] = 0x00;
 
+	int responseLength = 12;
 	if(!isValidRequest){
 		// Set the response code to 1 (FORMERR or “format error”)
 		response[3] = 0x01;
 		// Set the number of answer rr's to 0
 		response[6] = 0x00;
 		response[7] = 0x00;
-		return 12;
+		return responseLength;
 	}
 
 	// Set question count to 1.
@@ -221,8 +230,9 @@ int get_response(unsigned char *request, int len, unsigned char *response)
 	response[11] = 0x00;
 
 	// Copy question section from request.
-	int queryLength = rr_to_wire(rr, &(response[12]), 1); 
-	// printf("Query Length: %d\n", queryLength);
+	int queryLength = rr_to_wire(rr, &(response[responseLength]), 1); 
+	responseLength += queryLength;
+	printf("Query Length: %d\n", queryLength);
 
 	int matchIndex = -1;
 	// Look up the query in the cache
@@ -241,14 +251,24 @@ int get_response(unsigned char *request, int len, unsigned char *response)
 		printf("No cache record in the database. Exiting.\n");
 		// Set the response code to 3 (NXDOMAIN)
 		response[3] = 0x03;
-		// Set the number of answer rr's to 
+		// Set the number of answer rr's to 0
 		response[6] = 0x00;
 		response[7] = 0x00;
 		return 12;
 	}
 
+	// Set the response code to 0 (no error)
+	response[3] = 0x00;
+	// Set the number of answer rr's to 1
+	response[6] = 0x00;
+	response[7] = 0x01;
+
+	int answerRRLength = rr_to_wire((cachedb[matchIndex]).rr, &(response[responseLength]), 0);
+	responseLength += answerRRLength;
+
 	printf("Current response: ");
-	print_bytes(response, 40);
+	print_bytes(response, responseLength);
+	return responseLength;
 }
 
 int create_udp_server_socket(char *port, int protocol)
@@ -347,35 +367,36 @@ void serve_udp(unsigned short port)
     char client_port[NI_MAXSERV];
     while (1)
     {
-	struct sockaddr_storage client_addr;
-	int msg_length;
-	socklen_t client_addr_len = sizeof(client_addr);
+		struct sockaddr_storage client_addr;
+		int msg_length;
+		socklen_t client_addr_len = sizeof(client_addr);
 
-	// Receive a message from a client
-	if ((msg_length = recvfrom(sock, message, BUFFER_MAX, 0, (struct sockaddr *)&client_addr, &client_addr_len)) < 0)
-	{
-	    fprintf(stderr, "Failed in recvfrom\n");
-	    continue;
-	}
+		// Receive a message from a client
+		if ((msg_length = recvfrom(sock, message, BUFFER_MAX, 0, (struct sockaddr *)&client_addr, &client_addr_len)) < 0)
+		{
+			fprintf(stderr, "Failed in recvfrom\n");
+			continue;
+		}
 
-	// Get and print the address of the peer (for fun)
-	int ret = getnameinfo((struct sockaddr *)&client_addr, client_addr_len,
-			      client_hostname, BUFFER_MAX, client_port, BUFFER_MAX, 0);
-	if (ret != 0)
-	{
-	    fprintf(stderr, "Failed in getnameinfo: %s\n", gai_strerror(ret));
-	}
-	printf("Got a message from %s:%s\n", client_hostname, client_port);
+		// Get and print the address of the peer (for fun)
+		int ret = getnameinfo((struct sockaddr *)&client_addr, client_addr_len,
+					client_hostname, BUFFER_MAX, client_port, BUFFER_MAX, 0);
+		if (ret != 0)
+		{
+			fprintf(stderr, "Failed in getnameinfo: %s\n", gai_strerror(ret));
+		}
+		printf("Got a message from %s:%s\n", client_hostname, client_port);
 
-	// Print the dns request by bytes.
-	printf("\nMessage: ");
-	print_bytes(&(message[0]), msg_length);
+		// Print the dns request by bytes.
+		printf("\nMessage: ");
+		print_bytes(&(message[0]), msg_length);
 
-	unsigned char response[MAX_ENTRIES];
-	int responseLength = get_response(message, msg_length, &(response[0]));
+		unsigned char response[MAX_ENTRIES];
+		int responseLength = get_response(message, msg_length, &(response[0]));
 
-	// Just echo the message back to the client TODO: change this
-	sendto(sock, response, responseLength, 0, (struct sockaddr *)&client_addr, client_addr_len);
+		// print_bytes(response, responseLength);
+
+		sendto(sock, response, responseLength, 0, (struct sockaddr *)&client_addr, client_addr_len);
     }
     // return 0;
 }
