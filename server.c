@@ -189,10 +189,23 @@ int get_response(unsigned char *request, int len, unsigned char *response)
 	dns_rr rr = rr_from_wire(request, &i, 1);
 	printf("Name: %s\n", rr.name);
 
+	int matchIndex = -1;
 	// Look up the query in the cache
 	for(int i = 0; i < cachedb_len; i++){
 		dns_db_entry e = cachedb[i];
-		printf("Entry: %s\n", e.rr.name);
+		// printf("Entry: %s\n", e.rr.name);
+		if(strcmp(e.rr.name, rr.name) == 0){
+			// We have a match!
+			printf("Found a match!\n");
+			matchIndex = i;
+			break;
+		}
+	}
+
+	if(matchIndex == -1){
+		printf("No cache record in the database. Exiting.\n");
+		exit(1);
+		// return matchIndex;
 	}
 
 	// Build the response based on the cache entry/lack thereof
@@ -325,7 +338,7 @@ void serve_udp(unsigned short port)
 	print_bytes(&(message[0]), msg_length);
 
 	unsigned char response[MAX_ENTRIES];
-	get_response(message, msg_length, &(response[0]));
+	int responseLength = get_response(message, msg_length, &(response[0]));
 
 	// Just echo the message back to the client TODO: change this
 	sendto(sock, message, msg_length, 0, (struct sockaddr *)&client_addr, client_addr_len);
