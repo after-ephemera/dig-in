@@ -23,6 +23,7 @@ typedef struct
 } dns_db_entry;
 
 dns_db_entry cachedb[MAX_ENTRIES];
+int cachedb_len;
 time_t cachedb_start;
 char *cachedb_file;
 
@@ -41,24 +42,60 @@ void init_db()
 	 * OUTPUT: None
 	 */
     printf("Initializing database!\n");
-    char ownerName[256];
+    char* ownerName = malloc(256);
     int ttl;
     char class[5];
     char type[5];
-    char rData[512];
+    char* rData = malloc(MAX_ENTRIES);
 
     FILE *fp;
     fp = fopen(cachedb_file, "r");
+	int i = -1;
     while (fscanf(fp, "%s %d %s %s %s", ownerName, &ttl, class, type, rData) != EOF)
     {
+		int class_d;
+		if(strcmp(class, "IN") == 0){
+			class_d = 1;
+		} else{
+			// Handle a wrong class?
+		}
 
-	printf("\nownerName %s\n", ownerName);
-	printf("ttl %d\n", ttl);
-	printf("class %s\n", class);
-	printf("type %s\n", type);
-	printf("rData %s\n\n", rData);
+		int type_d;
+		if(strcmp(type, "A") == 0){
+			type_d = 1;
+		} else{
+			// Handle a wrong type?
+		}
+		dns_rr rr;
+
+		rr.name = ownerName;
+		rr.ttl = ttl;
+		rr.class = class_d;
+		rr.type = type_d;
+		rr.rdata = rData;
+		rr.rdata_len = strlen(rData);
+
+		printf("\nownerName %s\n", rr.name);
+		printf("ttl %d\n", rr.ttl);
+		printf("class %d\n", rr.class);
+		printf("type %d\n", rr.type);
+		printf("rData %s\n\n", rr.rdata);
+
+		dns_db_entry entry;
+		entry.rr = rr;
+		entry.expires = time(NULL) + ttl;
+
+		// free(rr);
+
+		i++;
+		cachedb[i] = entry;
+
+		// We need to point to a new string to store it elsewhere on the heap.
+		ownerName = malloc(256);
     }
-    printf("Finished reading DB.\n");
+	// Number of entries in the cache.
+	cachedb_len = i + 1;
+    printf("Finished reading DB. %d cache entries.\n", cachedb_len);
 }
 
 int is_valid_request(unsigned char *request)
@@ -148,7 +185,17 @@ int get_response(unsigned char *request, int len, unsigned char *response)
     printf("Valid: %s\n", isValidRequest ? "True" : "False");
 
 	// Get the query name and type
+	int i = 12;
+	dns_rr rr = rr_from_wire(request, &i, 1);
+	printf("Name: %s\n", rr.name);
 
+	// Look up the query in the cache
+	for(int i = 0; i < cachedb_len; i++){
+		dns_db_entry e = cachedb[i];
+		printf("Entry: %s\n", e.rr.name);
+	}
+
+	// Build the response based on the cache entry/lack thereof
 
 	if(isValidRequest){
 
@@ -277,7 +324,7 @@ void serve_udp(unsigned short port)
 	printf("\nMessage: ");
 	print_bytes(&(message[0]), msg_length);
 
-	unsigned char response[BUFFER_MAX];
+	unsigned char response[MAX_ENTRIES];
 	get_response(message, msg_length, &(response[0]));
 
 	// Just echo the message back to the client TODO: change this
@@ -331,7 +378,7 @@ int main(int argc, char *argv[])
     port = atoi(argv[argindex]);
 
     init_db();
-    serve_udp(80);
+    serve_udp(8080);
 
     // daemonize, if specified, and start server(s)
     // ...
