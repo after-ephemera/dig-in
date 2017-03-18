@@ -20,6 +20,8 @@
 #define LISTEN_QUEUE_SIZE 1024
 #define BUFFER_MAX 1024
 
+#define CNAME_TYPE 5
+
 typedef struct
 {
     dns_rr rr;
@@ -67,8 +69,8 @@ void init_db()
 		int type_d;
 		if(strcmp(type, "A") == 0){
 			type_d = 1;
-		} else{
-			// Handle a wrong type?
+		} else if(strcmp(type, "CNAME") == 0){
+			type_d = 5;
 		}
 		dns_rr rr;
 
@@ -80,12 +82,19 @@ void init_db()
 		rr.rdata_len = strlen(rData);
 
 		// Wire-encode the rdata 
-		char* d = malloc(4);
-		inet_pton(AF_INET, rData, d);
-		printf("New data: ");
-		print_bytes(d, 4);
-		rr.rdata = d;
-		rr.rdata_len = 4;
+		char* d = malloc(512);
+		if(rr.type == 1){
+			inet_pton(AF_INET, rData, d);
+			rr.rdata = d;
+			rr.rdata_len = 4;
+		}else if(rr.type == 5){
+			printf("Non-ip rData\n");
+			strcpy(d, rData);
+			rr.rdata = d;
+			rr.rdata_len = strlen(rData);
+		}
+		// printf("New data: ");
+		// print_bytes(d, 4);
 
 		printf("\nownerName %s\n", rr.name);
 		printf("ttl %d\n", rr.ttl);
@@ -239,15 +248,31 @@ int get_response(unsigned char *request, int len, unsigned char *response)
 	printf("Query Length: %d\n", queryLength);
 
 	int matchIndex = -1;
+
+	char* qname = malloc(512);
+	strcpy(qname, rr.name);
+	int rrCount = 0;
 	// Look up the query in the cache
 	for(int i = 0; i < cachedb_len; i++){
 		dns_db_entry e = cachedb[i];
 		// printf("Entry: %s\n", e.rr.name);
-		if(strcmp(e.rr.name, rr.name) == 0 && e.rr.type == rr.type && time(NULL) < e.expires){
+		if(strcmp(e.rr.name, qname) == 0 && e.rr.type == rr.type && time(NULL) < e.expires){
 			// We have a match!
 			printf("Found a match!\n");
 			matchIndex = i;
+			rrCount++;
 			break;
+		} else if(strcmp(e.rr.name, qname) == 0 && e.rr.type == CNAME_TYPE){
+			printf("Found a matching CNAME!\n");
+			// Add the matching rr to the response.
+			qname = e.rr.rdata;
+			// inet_ntop(AF_INET, e.rr.rdata, qname, 512);
+			printf("New qname: %s\n", qname);
+
+			rrCount++;
+			qname = e.rr.rdata;
+			// Return to the start of the loop.
+			i = 0;
 		}
 	}
 
@@ -263,9 +288,9 @@ int get_response(unsigned char *request, int len, unsigned char *response)
 
 	// Set the response code to 0 (no error)
 	response[3] = 0x00;
-	// Set the number of answer rr's to 1
+	// Set the number of answer rr's to rrCount.
 	response[6] = 0x00;
-	response[7] = 0x01;
+	response[7] = rrCount;
 
 	// Adjust the time-to-live on this cache entry.
 	cachedb[matchIndex].rr.ttl = cachedb[matchIndex].expires - time(NULL);
@@ -455,18 +480,15 @@ int main(int argc, char *argv[])
 			printf("Fork failed\n");
 			exit(1);
 		} else if(pid != 0){
-			int status = 0;
-			printf("Child pid = %d\n", pid);
+			printf("Daemon started with PID %d\n", pid);
 			// Exit the parent process.
 			raise(SIGCONT);
 			raise(SIGINT); 
-			wait(&status);
 		} else if(pid == 0){
-			printf("Closing files in child\n");
+			// printf("Closing files in child\n");
 			close(0);
 			close(1);
 			close(2);
-			// printf("Chi")
 		}
 	}
 		
