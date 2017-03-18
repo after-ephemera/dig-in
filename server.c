@@ -8,6 +8,9 @@
 #include <string.h>
 #include <netdb.h>
 #include <arpa/inet.h>
+#include <signal.h>
+#include <sys/wait.h>
+
 
 #include "dns.h"
 
@@ -264,9 +267,9 @@ int get_response(unsigned char *request, int len, unsigned char *response)
 	response[6] = 0x00;
 	response[7] = 0x01;
 
-	// dns_rr newRR;
-	// memcpy(&newRR, &e.rr, sizeof(rr));
+	// Adjust the time-to-live on this cache entry.
 	cachedb[matchIndex].rr.ttl = cachedb[matchIndex].expires - time(NULL);
+
 	int answerRRLength = rr_to_wire(cachedb[matchIndex].rr, &(response[responseLength]), 0);
 	responseLength += answerRRLength;
 
@@ -433,25 +436,45 @@ int main(int argc, char *argv[])
     int argindex = 1, daemonize = 0;
     if (argc < 3)
     {
-	fprintf(stderr, "Usage: %s [-d] <cache file> <port>\n", argv[0]);
-	exit(1);
+		fprintf(stderr, "Usage: %s [-d] <cache file> <port>\n", argv[0]);
+		exit(1);
     }
     if (argc > 3)
     {
-	if (strcmp(argv[1], "-d") != 0)
-	{
-	    fprintf(stderr, "Usage: %s [-d] <cache file> <port>\n", argv[0]);
-	    exit(1);
-	}
-	argindex++;
-	daemonize = 1;
+		if (strcmp(argv[1], "-d") != 0)
+		{
+			fprintf(stderr, "Usage: %s [-d] <cache file> <port>\n", argv[0]);
+			exit(1);
+		}
+		argindex++;
+		daemonize = 1;
     }
-    cachedb_file = argv[argindex++];
-    port = atoi(argv[argindex]);
+	if(daemonize){
+		pid_t pid = fork();
+		if(pid < 0){
+			printf("Fork failed\n");
+			exit(1);
+		} else if(pid != 0){
+			int status = 0;
+			printf("Child pid = %d\n", pid);
+			// Exit the parent process.
+			raise(SIGCONT);
+			raise(SIGINT); 
+			wait(&status);
+		} else if(pid == 0){
+			printf("Closing files in child\n");
+			close(0);
+			close(1);
+			close(2);
+			// printf("Chi")
+		}
+	}
+		
+	cachedb_file = argv[argindex++];
+	port = atoi(argv[argindex]);
 
-    init_db();
-    serve_udp(8080);
-
+	init_db();
+	serve_udp(8080);
     // daemonize, if specified, and start server(s)
     // ...
 }
